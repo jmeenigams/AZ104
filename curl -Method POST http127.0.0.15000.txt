@@ -1,0 +1,15 @@
+curl -Method POST http://127.0.0.1:5000/register `
+-Headers @{ "Content-Type" = "application/json" } `
+-Body '{"username":"test","email":"test@test.com","password":"123456"}'
+
+
+curl.exe -X POST "http://127.0.0.1:5000/login" `
+-H "Content-Type: application/json" `
+-c cookies.txt `
+-d "{\"email\":\"test@example.com\",\"password\":\"123456\"}"
+
+curl -Method GET http://127.0.0.1:5000/profile `
+-b cookies.txt
+
+curl -Method POST http://127.0.0.1:5000/logout `
+-b cookies.txt

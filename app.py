@@ -1,85 +1,81 @@
-from flask import Flask, request, jsonify, session
-from pymongo import MongoClient
+from flask import Flask, request, jsonify
 from flask_bcrypt import Bcrypt
+from flask_jwt_extended import (
+    JWTManager, create_access_token,
+    jwt_required, get_jwt_identity
+)
+from pymongo import MongoClient
 from dotenv import load_dotenv
-from bson.objectid import ObjectId
 import os
 
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY")
 
-# MongoDB Atlas connection
+# Config
+app.config["JWT_SECRET_KEY"] = os.getenv("SECRET_KEY")
+
+# Init
+bcrypt = Bcrypt(app)
+jwt = JWTManager(app)
+
+# MongoDB
 client = MongoClient(os.getenv("MONGO_URI"))
 db = client["auth_db"]
 users_collection = db["users"]
-
-bcrypt = Bcrypt(app)
 
 # ------------------------
 # Register
 # ------------------------
 @app.route("/register", methods=["POST"])
 def register():
-    from flask_bcrypt import Bcrypt
-    bcrypt = Bcrypt()    
+    data = request.json
 
-    password = "123456"
-    hashed_pw = bcrypt.generate_password_hash(password).decode("utf-8")
-    print(hashed_pw)
-    print("Stored hash:", user["password"])
-    print("Input password:", data["password"])
-    print("Check:", bcrypt.check_password_hash(user["password"], data["password"]))
+    if users_collection.find_one({"email": data["email"]}):
+        return jsonify({"error": "Email already exists"}), 400
 
+    hashed_pw = bcrypt.generate_password_hash(data["password"]).decode("utf-8")
+
+    users_collection.insert_one({
+        "username": data["username"],
+        "email": data["email"],
+        "password": hashed_pw
+    })
+
+    return jsonify({"message": "User registered successfully"}), 201
 
 # ------------------------
-# Login
+# Login (returns JWT)
 # ------------------------
 @app.route("/login", methods=["POST"])
 def login():
-
-
     data = request.json
-
     user = users_collection.find_one({"email": data["email"]})
 
     if not user or not bcrypt.check_password_hash(user["password"], data["password"]):
         return jsonify({"error": "Invalid credentials"}), 401
 
-    session["user_id"] = str(user["_id"])
+    access_token = create_access_token(identity=str(user["_id"]))
 
     return jsonify({
-        "message": "Login successful",
-        "user": {
-            "id": str(user["_id"]),
-            "username": user["username"],
-            "email": user["email"]
-        }
+        "access_token": access_token
     })
 
 # ------------------------
-# Profile (protected)
+# Protected Route
 # ------------------------
 @app.route("/profile", methods=["GET"])
+@jwt_required()
 def profile():
-    if "user_id" not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    user = users_collection.find_one({"_id": ObjectId(session["user_id"])})
+    user_id = get_jwt_identity()
 
     return jsonify({
-        "username": user["username"],
-        "email": user["email"]
+        "message": "Access granted",
+        "user_id": user_id
     })
 
 # ------------------------
-# Logout
+# Run
 # ------------------------
-@app.route("/logout", methods=["POST"])
-def logout():
-    session.pop("user_id", None)
-    return jsonify({"message": "Logged out"})
-
 if __name__ == "__main__":
     app.run(debug=True)
